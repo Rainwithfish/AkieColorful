@@ -24,18 +24,19 @@ export default async (request, context) => {
         const safeNick = String(nickname || ("QQ" + qq)).slice(0, 24);
         const safeAvatar = String(avatar || "").slice(0, 500);
 
-        // 1. 读取旧数据
-        const getRes = await fetch(url, {
+        // 使用 pipeline 读取旧数据
+        const getRes = await fetch(url + '/pipeline', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(["HGETALL", `player:${qq}`])
+            body: JSON.stringify([["HGETALL", `player:${qq}`]])
         });
-        const oldData = (await getRes.json()).result || {};
+        const getData = await getRes.json();
+        const oldData = getData[0]?.result || {};
         const oldBest = oldData.best ? Number(oldData.best) : 0;
         const isNewBest = score > oldBest;
         const newBest = Math.max(oldBest, score);
 
-        // 2. 批量更新玩家信息 + 排行榜
+        // 使用 pipeline 批量更新
         const pipelineCommands = [
             ["HSET", `player:${qq}`, "qq", String(qq), "nickname", safeNick, "avatar", safeAvatar, "best", String(newBest), "maxCombo", String(Math.max(Number(oldData.maxCombo || 0), maxCombo || 0)), "time", String(Date.now())],
             ["ZADD", "leaderboard", String(newBest), String(qq)]
@@ -46,14 +47,15 @@ export default async (request, context) => {
             body: JSON.stringify(pipelineCommands)
         });
 
-        // 3. 获取排名
-        const rankRes = await fetch(url, {
+        // 使用 pipeline 获取排名
+        const rankRes = await fetch(url + '/pipeline', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(["ZREVRANK", "leaderboard", String(qq)])
+            body: JSON.stringify([["ZREVRANK", "leaderboard", String(qq)]])
         });
         const rankData = await rankRes.json();
-        const finalRank = rankData.result !== null ? rankData.result + 1 : 1;
+        const rankResult = rankData[0]?.result;
+        const finalRank = rankResult !== null && rankResult !== undefined ? rankResult + 1 : 1;
 
         return new Response(JSON.stringify({ ok: true, isNewBest, best: newBest, rank: finalRank }), {
             status: 200,
