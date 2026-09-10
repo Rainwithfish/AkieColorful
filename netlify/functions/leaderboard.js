@@ -11,12 +11,19 @@ export default async (request, context) => {
         const token = process.env.UPSTASH_REDIS_REST_TOKEN;
         if (!url || !token) throw new Error("Missing Upstash environment variables");
 
-        // 使用 pipeline 获取前 50 名 QQ 号
+        // 获取前 50 名 QQ 号
         const zrangeRes = await fetch(url + '/pipeline', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify([["ZREVRANGE", "leaderboard", 0, 49]])
         });
+        
+        // ⭐ 新增：检查 Upstash 是否返回了错误状态码
+        if (!zrangeRes.ok) {
+            const errorText = await zrangeRes.text();
+            throw new Error(`Upstash error: ${zrangeRes.status} ${errorText}`);
+        }
+        
         const zrangeData = await zrangeRes.json();
         const qqs = zrangeData[0]?.result || [];
 
@@ -24,16 +31,21 @@ export default async (request, context) => {
             return new Response(JSON.stringify({ list: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
         }
 
-        // 使用 pipeline 批量获取玩家详情
+        // 批量获取玩家详情
         const pipelineCommands = qqs.map(qq => ["HGETALL", `player:${qq}`]);
         const pipelineRes = await fetch(url + '/pipeline', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(pipelineCommands)
         });
+
+        if (!pipelineRes.ok) {
+            const errorText = await pipelineRes.text();
+            throw new Error(`Upstash pipeline error: ${pipelineRes.status} ${errorText}`);
+        }
+
         const pipelineData = await pipelineRes.json();
 
-        // 组装数据
         const list = pipelineData.map((item, index) => {
             const entry = item.result || {};
             return {
