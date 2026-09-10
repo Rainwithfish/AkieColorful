@@ -30,14 +30,20 @@ export default async (request, context) => {
             body: JSON.stringify([["HGETALL", `player:${qq}`]])
         });
 
-        // ⭐ 新增：严格检查错误
         if (!getRes.ok) {
             const errorText = await getRes.text();
             throw new Error(`Upstash get error: ${getRes.status} ${errorText}`);
         }
 
         const getData = await getRes.json();
-        const oldData = getData[0]?.result || {};
+        
+        // ⭐ 修复：将 HGETALL 返回的扁平数组转为对象
+        const rawOldData = getData[0]?.result || [];
+        const oldData = {};
+        for (let i = 0; i < rawOldData.length; i += 2) {
+            oldData[rawOldData[i]] = rawOldData[i + 1];
+        }
+
         const oldBest = oldData.best ? Number(oldData.best) : 0;
         const isNewBest = score > oldBest;
         const newBest = Math.max(oldBest, score);
@@ -80,7 +86,6 @@ export default async (request, context) => {
         });
     } catch (error) {
         console.error("submit-score error:", error);
-        // ⭐ 抛出错误，前端会提示"分数上传失败"
         return new Response(JSON.stringify({ ok: false, error: "server_error", message: error.message }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
 };

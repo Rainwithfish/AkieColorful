@@ -18,7 +18,6 @@ export default async (request, context) => {
             body: JSON.stringify([["ZREVRANGE", "leaderboard", 0, 49]])
         });
         
-        // ⭐ 新增：检查 Upstash 是否返回了错误状态码
         if (!zrangeRes.ok) {
             const errorText = await zrangeRes.text();
             throw new Error(`Upstash error: ${zrangeRes.status} ${errorText}`);
@@ -47,7 +46,13 @@ export default async (request, context) => {
         const pipelineData = await pipelineRes.json();
 
         const list = pipelineData.map((item, index) => {
-            const entry = item.result || {};
+            // ⭐ 修复：将 HGETALL 返回的扁平数组转为对象
+            const rawData = item.result || [];
+            const entry = {};
+            for (let i = 0; i < rawData.length; i += 2) {
+                entry[rawData[i]] = rawData[i + 1];
+            }
+
             return {
                 rank: index + 1,
                 qq: entry.qq || qqs[index],
